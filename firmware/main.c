@@ -29,11 +29,16 @@ int main(void)
 	puts("\nNeTV2 CPU testing software built "__DATE__" "__TIME__);
 
 	config_init();
+	puts("here\n");
 	time_init();
+	puts("here\n");
 
 	processor_init();
+	puts("here\n");
 	processor_update();
+	puts("here\n");
 	processor_start(config_get(CONFIG_KEY_RESOLUTION));
+	puts("here\n");
 
 	ci_prompt();
 	while(1) {

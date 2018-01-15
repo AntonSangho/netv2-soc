@@ -26,6 +26,15 @@ from litepcie.frontend.wishbone import LitePCIeWishboneBridge
 from litevideo.input import HDMIIn
 from litevideo.output import VideoOut
 
+from litevideo.input.analysis import SyncPolarity, ResolutionDetection
+from litevideo.input.analysis import FrameExtraction
+from litevideo.input.dma import DMA
+
+from litex.soc.cores import uart
+from litex.soc.cores.uart import UARTWishboneBridge
+from litescope import LiteScopeAnalyzer
+from litex.build.tools import write_to_file
+
 import cpu_interface
 
 
@@ -42,6 +51,12 @@ _io = [
         IOStandard("LVCMOS33"),
     ),
 
+    ("debug_serial", 0,
+        Subsignal("tx", Pins("B15")), # HAX0
+        Subsignal("rx", Pins("B16")), # HAX1
+        IOStandard("LVCMOS33"),
+    ),
+    
     ("ddram", 0,
         Subsignal("a", Pins(
             "U6 V4 W5 V5 AA1 Y2 AB1 AB3",
@@ -283,6 +298,7 @@ class BaseSoC(SoCSDRAM):
         "ddrphy",
         "dna",
         "xadc",
+        "analyzer",
     }
     csr_map_update(SoCSDRAM.csr_map, csr_peripherals)
 
@@ -298,6 +314,9 @@ class BaseSoC(SoCSDRAM):
         self.submodules.crg = CRG(platform)
         self.submodules.dna = dna.DNA()
         self.submodules.xadc = xadc.XADC()
+
+        self.submodules.bridge = UARTWishboneBridge(platform.request("debug_serial"), self.clk_freq, baudrate=115200)
+        self.add_wb_master(self.bridge.wishbone)
 
         self.crg.cd_sys.clk.attr.add("keep")
         self.platform.add_period_constraint(self.crg.cd_sys.clk, period_ns(100e6))
@@ -395,6 +414,16 @@ class VideoSoC(BaseSoC):
         BaseSoC.__init__(self, platform, *args, **kwargs)
 
         # # #
+        self.platform.add_source("verilog/hdmi_decoder.v")
+        self.platform.add_source("verilog/decodeb.v")
+        self.platform.add_source("verilog/decodeg.v")
+        self.platform.add_source("verilog/decoder.v")
+        self.platform.add_source("verilog/DRAM16XN.v")
+        self.platform.add_source("verilog/chnlbond.v")
+        self.platform.add_source("verilog/decode_terc4.v")
+        self.platform.add_source("verilog/phsaligner.v")
+        self.platform.add_source("verilog/tmds_data_dec.v")
+        # # #
 
         pix_freq = 148.50e6
 
@@ -416,13 +445,77 @@ class VideoSoC(BaseSoC):
             self.hdmi_in0.clocking.cd_pix1p25x.clk,
             self.hdmi_in0.clocking.cd_pix5x.clk)
 
+#        self.hdmi_in0_reset = Signal()
+        self.hdmi_in0_reset = ResetSignal("hdmi_in0_pix")
+        self.sdout = Signal(30)
+        self.hi0_red = Signal(8)
+        self.hi0_green = Signal(8)
+        self.hi0_blue = Signal(8)
+        self.hi0_vsync = Signal()
+        self.hi0_valid = Signal()
+        self.hi0_de = Signal()
+        self.hi0_ctl = Signal(4)
+        self.hi0_video_gb = Signal()
+        self.hi0_basic_de = Signal()
+        self.specials += Instance("hdmi_decoder",
+                                  i_p_clk=self.hdmi_in0.clocking.cd_pix.clk,
+                                  i_reset_in=self.hdmi_in0_reset,
+                                  i_raw_b=self.hdmi_in0.data0_charsync.data,
+                                  i_raw_g=self.hdmi_in0.data1_charsync.data,
+                                  i_raw_r=self.hdmi_in0.data2_charsync.data,
+#                                  i_raw_b=self.hdmi_in0.chansync.data_out0.raw,
+#                                  i_raw_g=self.hdmi_in0.chansync.data_out1.raw,
+#                                  i_raw_r=self.hdmi_in0.chansync.data_out2.raw,
+                                  i_vld_b=self.hdmi_in0.data0_charsync.synced,
+                                  i_vld_g=self.hdmi_in0.data1_charsync.synced,
+                                  i_vld_r=self.hdmi_in0.data2_charsync.synced,
+                                  o_sdout=self.sdout,
+                                  o_red=self.hi0_red,
+                                  o_green=self.hi0_green,
+                                  o_blue=self.hi0_blue,
+                                  o_vsync=self.hi0_vsync,
+                                  o_valid=self.hi0_valid,
+                                  o_de=self.hi0_de,
+                                  o_ctl_code=self.hi0_ctl,
+                                  o_video_gb=self.hi0_video_gb,
+                                  o_basic_de=self.hi0_basic_de,
+        )
+        # self.submodules.resdetection2 = ResolutionDetection()
+        # self.comb += [
+        #     self.resdetection2.valid_i.eq(self.hi0_valid),
+        #     self.resdetection2.de.eq(self.hi0_de),
+        #     self.resdetection2.vsync.eq(self.hi0_vsync)
+        # ]
+
+        # hi0_dram = self.sdram.crossbar.get_port(mode="write", dw=32)
+        
+        # self.submodules.frame2 = FrameExtraction(hi0_dram.dw, 512)
+        # self.comb += [
+        #         self.frame2.valid_i.eq(self.hi0_valid),
+        #         self.frame2.de.eq(self.hi0_de),
+        #         self.frame2.vsync.eq(self.hi0_vsync),
+        #         self.frame2.r.eq(self.hi0_red),
+        #         self.frame2.g.eq(self.hi0_green),
+        #         self.frame2.b.eq(self.hi0_blue)
+        # ]
+
+        # self.submodules.dma = DMA(hi0_dram, 2)
+        # self.comb += self.frame2.frame.connect(self.dma.frame)
+        # self.ev = self.dma.ev
+
         # hdmi out
-        hdmi_out0_dram_port = self.sdram.crossbar.get_port(mode="read", dw=16, cd="hdmi_out0_pix", reverse=True)
         self.submodules.hdmi_out0 = VideoOut(platform.device,
-                                            platform.request("hdmi_out", 0),
-                                            hdmi_out0_dram_port,
-                                            "ycbcr422",
-                                            fifo_depth=4096)
+                                             platform.request("hdmi_out", 0),
+                                             None,
+                                             bypass=True,
+                                             bypass_sdout=self.sdout)
+        
+        # hdmi_out0_dram_port = self.sdram.crossbar.get_port(mode="read", dw=32, cd="hdmi_out0_pix", reverse=True)
+        # self.submodules.hdmi_out0 = VideoOut(platform.device,
+        #                                     platform.request("hdmi_out", 0),
+        #                                     hdmi_out0_dram_port,
+        #                                     "rgb",
+        #                                      fifo_depth=512)
 
         self.platform.add_period_constraint(self.hdmi_out0.driver.clocking.cd_pix.clk, period_ns(1*pix_freq))
         self.platform.add_period_constraint(self.hdmi_out0.driver.clocking.cd_pix5x.clk, period_ns(5*pix_freq))
@@ -438,6 +531,26 @@ class VideoSoC(BaseSoC):
             platform.request("hdmi_sda_over_dn").eq(0),
         ]
 
+        analyzer_signals = [
+            self.sdout,
+            self.hdmi_in0.data0_charsync.data,
+            self.hdmi_in0.data0_charsync.synced,
+            self.hdmi_in0.data1_charsync.synced,
+            self.hdmi_in0.data2_charsync.synced,
+            self.hi0_de,
+            self.hi0_vsync,
+            self.hi0_valid,
+            self.hdmi_in0_reset,
+            self.hi0_ctl,
+            self.hi0_video_gb,
+            self.hi0_basic_de,
+        ]
+        self.clock_domains.cd_hdmi0_pix = ClockDomain()
+        self.comb += self.cd_hdmi0_pix.clk.eq(self.hdmi_out0.driver.clocking.cd_pix.clk)
+        self.submodules.analyzer = LiteScopeAnalyzer(analyzer_signals, 2048, cd="hdmi0_pix", cd_ratio=2)
+        
+    autocsr_exclude = {"ev"}
+        
 
 def main():
     platform = Platform()
@@ -450,8 +563,16 @@ def main():
         soc = PCIeSoC(platform)
     elif sys.argv[1] == "video":
         soc = VideoSoC(platform)
+
+#    import pdb; pdb.set_trace()
     builder = Builder(soc, output_dir="build")
     vns = builder.build()
+    
+    csr_regions = soc.get_csr_regions()
+    csr_constants = soc.get_constants()
+    csr_csv = cpu_interface.get_csr_csv(csr_regions, csr_constants)
+    write_to_file("build/test/csr.csv", csr_csv)
+    soc.analyzer.export_csv(vns, "build/test/analyzer.csv")
 
     if sys.argv[1] == "pcie":
         csr_header = cpu_interface.get_csr_header(soc.get_csr_regions(), soc.get_constants())
@@ -459,3 +580,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

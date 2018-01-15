@@ -372,6 +372,7 @@ static void fb_set_mode(const struct video_timing *mode)
 	fb_get_clock_md(10*(mode->pixel_clock), &clock_m, &clock_d);
 
 #ifdef CSR_HDMI_OUT0_BASE
+#if NOT_BYPASS	
 	if (hdmi_out0_core_initiator_enable_read()) {
 		hdmi_out0_enabled = 1;
 		hdmi_out0_core_initiator_enable_write(0);
@@ -388,6 +389,7 @@ static void fb_set_mode(const struct video_timing *mode)
 	hdmi_out0_core_initiator_length_write(mode->h_active*mode->v_active*2);
 
 	hdmi_out0_core_initiator_enable_write(hdmi_out0_enabled);
+#endif
 #endif
 
 #ifdef CSR_HDMI_OUT1_BASE
@@ -452,8 +454,11 @@ void processor_start(int mode)
 	processor_v_active = m->v_active;
 	processor_refresh = calculate_refresh_rate(m);
 
+	puts("here2\n");
 #ifdef CSR_HDMI_OUT0_BASE
+#if NOT_BYPASS	
 	hdmi_out0_core_initiator_enable_write(0);
+#endif
 	hdmi_out0_driver_clocking_mmcm_reset_write(1);
 #endif
 #ifdef CSR_HDMI_OUT1_BASE
@@ -478,22 +483,30 @@ void processor_start(int mode)
 	pattern_fill_framebuffer(m->h_active, m->v_active);
 #endif
 
+	puts("here2\n");
 #ifdef CSR_HDMI_IN0_BASE
 	mmcm_config_for_clock(m->pixel_clock);
 #endif
+	puts("here2\n");
 	fb_set_mode(m);
+	puts("here2\n");
 	edid_set_mode(m);
 #ifdef CSR_HDMI_IN0_BASE
 	hdmi_in0_init_video(m->h_active, m->v_active);
 #endif
+	puts("here2\n");
 #ifdef CSR_HDMI_IN1_BASE
 	hdmi_in1_init_video(m->h_active, m->v_active);
 #endif
 
+	puts("here2\n");
 #ifdef CSR_HDMI_OUT0_BASE
 	hdmi_out0_driver_clocking_mmcm_reset_write(0);
+#if NOT_BYPASS	
 	hdmi_out0_core_initiator_enable_write(1);
 #endif
+#endif
+	puts("here2\n");
 #ifdef CSR_HDMI_OUT1_BASE
 	hdmi_out1_core_initiator_enable_write(1);
 #endif
@@ -531,15 +544,19 @@ void processor_update(void)
 #ifdef CSR_HDMI_OUT0_BASE
 	/*  hdmi_out0 */
 #ifdef CSR_HDMI_IN0_BASE
+#if NOT_BYPASS	
 	if(processor_hdmi_out0_source == VIDEO_IN_HDMI_IN0)
 		hdmi_out0_core_initiator_base_write(hdmi_in0_framebuffer_base(hdmi_in0_fb_index));
+#endif
 #endif
 #ifdef CSR_HDMI_IN1_BASE
 	if(processor_hdmi_out0_source == VIDEO_IN_HDMI_IN1)
 		hdmi_out0_core_initiator_base_write(hdmi_in1_framebuffer_base(hdmi_in1_fb_index));
 #endif
+#if NOT_BYPASS	
 	if(processor_hdmi_out0_source == VIDEO_IN_PATTERN)
 		hdmi_out0_core_initiator_base_write(pattern_framebuffer_base());
+#endif
 #endif
 
 #ifdef CSR_HDMI_OUT1_BASE

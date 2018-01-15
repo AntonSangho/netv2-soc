@@ -218,6 +218,7 @@ static void status_print(void)
 
 #ifdef CSR_HDMI_OUT0_BASE
 	wprintf("output0: ");
+#if NOT_BYPASS	
 	if(hdmi_out0_core_initiator_enable_read()) {
 		hdmi_out0_core_underflow_enable_write(1);
 	    hdmi_out0_core_underflow_update_write(1);
@@ -233,6 +234,7 @@ static void status_print(void)
 		hdmi_out0_core_underflow_enable_write(1);
 	} else
 		wprintf("off");
+#endif
 	wprintf("\r\n");
 #endif
 
@@ -413,13 +415,17 @@ static void hdp_toggle(int source)
 static void output0_on(void)
 {
 	wprintf("Enabling output0\r\n");
+#if NOT_BYPASS	
 	hdmi_out0_core_initiator_enable_write(1);
+#endif
 }
 
 static void output0_off(void)
 {
 	wprintf("Disabling output0\r\n");
+#if NOT_BYPASS	
 	hdmi_out0_core_initiator_enable_write(0);
+#endif
 }
 #endif
 
