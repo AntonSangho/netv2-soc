@@ -296,10 +296,12 @@ int hdmi_in0_phase_startup(freq)
 
 static void hdmi_in0_check_overflow(void)
 {
+#if 0 
 	if(hdmi_in0_frame_overflow_read()) {
 		printf("dvisampler0: FIFO overflow\r\n");
 		hdmi_in0_frame_overflow_write(1);
 	}
+#endif
 }
 
 static int hdmi_in0_clocking_locked_filtered(void)

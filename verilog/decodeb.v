@@ -79,24 +79,23 @@ module decodeb (
   // Specification: Section 3.3.3, Figure 3-6, page 31. 
   /////////////////////////////////////////////////////////////////
   // Distinct Control Tokens
-  parameter CTRLTOKEN0 = 10'b1101010100;
-  parameter CTRLTOKEN1 = 10'b0010101011;
-  parameter CTRLTOKEN2 = 10'b0101010100;
-  parameter CTRLTOKEN3 = 10'b1010101011;
+  parameter CTRLTOKEN0 = 10'b1101010100; //852, 0x354
+  parameter CTRLTOKEN1 = 10'b0010101011; //171, 0x0AB
+  parameter CTRLTOKEN2 = 10'b0101010100; //340, 0x154
+  parameter CTRLTOKEN3 = 10'b1010101011; //683, 0x2AB
 
   parameter DATA_GB    = 10'b0100110011;
   parameter VID_B_GB   = 10'b1011001100;
   parameter VID_G_GB   = 10'b0100110011;
   parameter VID_R_GB   = 10'b1011001100;
 
-//  wire [7:0] data;
-//   genvar    i;
-//   generate
-//      for( i = 0; i <= 7; i = i + 1 ) begin : genloop
-//	 assign data[i] = sdata[9] ? !sdata[i] : sdata[i];
-//      end
-//   endgenerate
-   
+  wire [7:0] data;
+   genvar    i;
+   generate
+      for( i = 0; i <= 7; i = i + 1 ) begin : genloop
+	 assign data[i] = sdata[9] ? !sdata[i] : sdata[i];
+      end
+   endgenerate
 //  assign data = (sdata[9]) ? ~sdata[7:0] : sdata[7:0]; 
 
   always @ (posedge pclk) begin
@@ -157,23 +156,23 @@ module decodeb (
 	end
         
         default: begin 
-	   dout[0] <= (sdata[0] ^ sdata[9]);
-	   dout[1] <= ((sdata[1] ^ sdata[0]) ^ (~sdata[8]));
-	   dout[2] <= ((sdata[2] ^ sdata[1]) ^ (~sdata[8]));
-	   dout[3] <= ((sdata[3] ^ sdata[2]) ^ (~sdata[8]));
-	   dout[4] <= ((sdata[4] ^ sdata[3]) ^ (~sdata[8]));
-	   dout[5] <= ((sdata[5] ^ sdata[4]) ^ (~sdata[8]));
-	   dout[6] <= ((sdata[6] ^ sdata[5]) ^ (~sdata[8]));
-	   dout[7] <= ((sdata[7] ^ sdata[6]) ^ (~sdata[8]));
+//	   dout[0] <= (sdata[0] ^ sdata[9]);
+//	   dout[1] <= ((sdata[1] ^ sdata[0]) ^ (~sdata[8]));
+//	   dout[2] <= ((sdata[2] ^ sdata[1]) ^ (~sdata[8]));
+//	   dout[3] <= ((sdata[3] ^ sdata[2]) ^ (~sdata[8]));
+//	   dout[4] <= ((sdata[4] ^ sdata[3]) ^ (~sdata[8]));
+//	   dout[5] <= ((sdata[5] ^ sdata[4]) ^ (~sdata[8]));
+//	   dout[6] <= ((sdata[6] ^ sdata[5]) ^ (~sdata[8]));
+//	   dout[7] <= ((sdata[7] ^ sdata[6]) ^ (~sdata[8]));
 
-//          dout[0] <=#1 data[0];
-//          dout[1] <=#1 (sdata[8]) ? (data[1] ^ data[0]) : (data[1] ~^ data[0]);
-//          dout[2] <=#1 (sdata[8]) ? (data[2] ^ data[1]) : (data[2] ~^ data[1]);
-//          dout[3] <=#1 (sdata[8]) ? (data[3] ^ data[2]) : (data[3] ~^ data[2]);
-//          dout[4] <=#1 (sdata[8]) ? (data[4] ^ data[3]) : (data[4] ~^ data[3]);
-//          dout[5] <=#1 (sdata[8]) ? (data[5] ^ data[4]) : (data[5] ~^ data[4]);
-//          dout[6] <=#1 (sdata[8]) ? (data[6] ^ data[5]) : (data[6] ~^ data[5]);
-//          dout[7] <=#1 (sdata[8]) ? (data[7] ^ data[6]) : (data[7] ~^ data[6]);
+          dout[0] <=#1 data[0];
+          dout[1] <=#1 (sdata[8]) ? (data[1] ^ data[0]) : (data[1] ~^ data[0]);
+          dout[2] <=#1 (sdata[8]) ? (data[2] ^ data[1]) : (data[2] ~^ data[1]);
+          dout[3] <=#1 (sdata[8]) ? (data[3] ^ data[2]) : (data[3] ~^ data[2]);
+          dout[4] <=#1 (sdata[8]) ? (data[4] ^ data[3]) : (data[4] ~^ data[3]);
+          dout[5] <=#1 (sdata[8]) ? (data[5] ^ data[4]) : (data[5] ~^ data[4]);
+          dout[6] <=#1 (sdata[8]) ? (data[6] ^ data[5]) : (data[6] ~^ data[5]);
+          dout[7] <=#1 (sdata[8]) ? (data[7] ^ data[6]) : (data[7] ~^ data[6]);
 
           de <=#1 1'b1;
 

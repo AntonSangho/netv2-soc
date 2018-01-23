@@ -35,6 +35,8 @@ from litex.soc.cores.uart import UARTWishboneBridge
 from litescope import LiteScopeAnalyzer
 from litex.build.tools import write_to_file
 
+from litex.soc.interconnect.csr import AutoCSR
+
 import cpu_interface
 
 
@@ -431,9 +433,11 @@ class VideoSoC(BaseSoC):
         hdmi_in0_pads = platform.request("hdmi_in", 0)
         self.submodules.hdmi_in0_freq = FrequencyMeter(period=self.clk_freq)
         self.submodules.hdmi_in0 = HDMIIn(hdmi_in0_pads,
-                                         self.sdram.crossbar.get_port(mode="write"),
-                                         fifo_depth=512,
-                                         device="xc7")
+                                          self.sdram.crossbar.get_port(mode="write"),
+                                          fifo_depth=512,
+                                          device="xc7",
+                                          bypass=True
+        )
         self.comb += self.hdmi_in0_freq.clk.eq(self.hdmi_in0.clocking.cd_pix.clk)
         self.platform.add_period_constraint(self.hdmi_in0.clocking.cd_pix.clk, period_ns(1*pix_freq))
         self.platform.add_period_constraint(self.hdmi_in0.clocking.cd_pix1p25x.clk, period_ns(1.25*pix_freq))
@@ -445,70 +449,13 @@ class VideoSoC(BaseSoC):
             self.hdmi_in0.clocking.cd_pix1p25x.clk,
             self.hdmi_in0.clocking.cd_pix5x.clk)
 
-#        self.hdmi_in0_reset = Signal()
-        self.hdmi_in0_reset = ResetSignal("hdmi_in0_pix")
-        self.sdout = Signal(30)
-        self.hi0_red = Signal(8)
-        self.hi0_green = Signal(8)
-        self.hi0_blue = Signal(8)
-        self.hi0_vsync = Signal()
-        self.hi0_valid = Signal()
-        self.hi0_de = Signal()
-        self.hi0_ctl = Signal(4)
-        self.hi0_video_gb = Signal()
-        self.hi0_basic_de = Signal()
-        self.specials += Instance("hdmi_decoder",
-                                  i_p_clk=self.hdmi_in0.clocking.cd_pix.clk,
-                                  i_reset_in=self.hdmi_in0_reset,
-                                  i_raw_b=self.hdmi_in0.data0_charsync.data,
-                                  i_raw_g=self.hdmi_in0.data1_charsync.data,
-                                  i_raw_r=self.hdmi_in0.data2_charsync.data,
-#                                  i_raw_b=self.hdmi_in0.chansync.data_out0.raw,
-#                                  i_raw_g=self.hdmi_in0.chansync.data_out1.raw,
-#                                  i_raw_r=self.hdmi_in0.chansync.data_out2.raw,
-                                  i_vld_b=self.hdmi_in0.data0_charsync.synced,
-                                  i_vld_g=self.hdmi_in0.data1_charsync.synced,
-                                  i_vld_r=self.hdmi_in0.data2_charsync.synced,
-                                  o_sdout=self.sdout,
-                                  o_red=self.hi0_red,
-                                  o_green=self.hi0_green,
-                                  o_blue=self.hi0_blue,
-                                  o_vsync=self.hi0_vsync,
-                                  o_valid=self.hi0_valid,
-                                  o_de=self.hi0_de,
-                                  o_ctl_code=self.hi0_ctl,
-                                  o_video_gb=self.hi0_video_gb,
-                                  o_basic_de=self.hi0_basic_de,
-        )
-        # self.submodules.resdetection2 = ResolutionDetection()
-        # self.comb += [
-        #     self.resdetection2.valid_i.eq(self.hi0_valid),
-        #     self.resdetection2.de.eq(self.hi0_de),
-        #     self.resdetection2.vsync.eq(self.hi0_vsync)
-        # ]
-
-        # hi0_dram = self.sdram.crossbar.get_port(mode="write", dw=32)
-        
-        # self.submodules.frame2 = FrameExtraction(hi0_dram.dw, 512)
-        # self.comb += [
-        #         self.frame2.valid_i.eq(self.hi0_valid),
-        #         self.frame2.de.eq(self.hi0_de),
-        #         self.frame2.vsync.eq(self.hi0_vsync),
-        #         self.frame2.r.eq(self.hi0_red),
-        #         self.frame2.g.eq(self.hi0_green),
-        #         self.frame2.b.eq(self.hi0_blue)
-        # ]
-
-        # self.submodules.dma = DMA(hi0_dram, 2)
-        # self.comb += self.frame2.frame.connect(self.dma.frame)
-        # self.ev = self.dma.ev
-
         # hdmi out
+        hdmi_out0_dram_port = self.sdram.crossbar.get_port(mode="read", dw=32, cd="hdmi_out0_pix", reverse=True)
         self.submodules.hdmi_out0 = VideoOut(platform.device,
                                              platform.request("hdmi_out", 0),
-                                             None,
-                                             bypass=True,
-                                             bypass_sdout=self.sdout)
+                                             hdmi_out0_dram_port,
+                                             mode="bypass",
+                                             bypass=True)
         
         # hdmi_out0_dram_port = self.sdram.crossbar.get_port(mode="read", dw=32, cd="hdmi_out0_pix", reverse=True)
         # self.submodules.hdmi_out0 = VideoOut(platform.device,
@@ -532,22 +479,33 @@ class VideoSoC(BaseSoC):
         ]
 
         analyzer_signals = [
-            self.sdout,
+            self.hdmi_in0.sdout,
             self.hdmi_in0.data0_charsync.data,
+            self.hdmi_in0.data1_charsync.data,
+            self.hdmi_in0.data2_charsync.data,
             self.hdmi_in0.data0_charsync.synced,
             self.hdmi_in0.data1_charsync.synced,
             self.hdmi_in0.data2_charsync.synced,
-            self.hi0_de,
-            self.hi0_vsync,
-            self.hi0_valid,
-            self.hdmi_in0_reset,
-            self.hi0_ctl,
-            self.hi0_video_gb,
-            self.hi0_basic_de,
+            self.hdmi_in0.hi0_de,
+            self.hdmi_in0.hi0_hsync,
+            self.hdmi_in0.hi0_vsync,
+            self.hdmi_in0.hi0_valid,
+            self.hdmi_in0.hi0_ctl,
+            self.hdmi_in0.hi0_video_gb,
+            self.hdmi_in0.hi0_basic_de,
+            self.hdmi_in0.dma.frame.valid,
+            self.hdmi_in0.dma.frame.sof,
+#            self.hdmi_in0.dma.frame.payload.pixels,
+            self.hdmi_out0.driver.hdmi_phy.es0.data_in,
+#            self.hdmi_out0.core.dma.fsm.before_entering_signals,
+            self.hdmi_out0.core.dma.dma.source.ready,
+            self.hdmi_out0.core.dma.dma.source.valid,
+#            self.hdmi_out0.core.dma.dma.source.payload.data,  ## this is interesting look at it later
         ]
         self.clock_domains.cd_hdmi0_pix = ClockDomain()
-        self.comb += self.cd_hdmi0_pix.clk.eq(self.hdmi_out0.driver.clocking.cd_pix.clk)
-        self.submodules.analyzer = LiteScopeAnalyzer(analyzer_signals, 2048, cd="hdmi0_pix", cd_ratio=2)
+#        self.comb += self.cd_hdmi0_pix.clk.eq(self.hdmi_out0.driver.clocking.cd_pix.clk)
+        self.comb += self.cd_hdmi0_pix.clk.eq(self.hdmi_in0.clocking.cd_pix.clk)
+        self.submodules.analyzer = LiteScopeAnalyzer(analyzer_signals, 512, cd="hdmi0_pix", cd_ratio=2)
         
     autocsr_exclude = {"ev"}
         
