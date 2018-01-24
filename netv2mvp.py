@@ -141,7 +141,7 @@ _io = [
         Subsignal("data1_n", Pins("AB20"), IOStandard("TMDS_33"), Inverted()),
         Subsignal("data2_p", Pins("AB21"), IOStandard("TMDS_33"), Inverted()),
         Subsignal("data2_n", Pins("AB22"), IOStandard("TMDS_33"), Inverted()),
-        Subsignal("scl", Pins("W17"), IOStandard("LVCMOS33")),
+        Subsignal("scl", Pins("W17"), IOStandard("LVCMOS33"), Inverted()),
         Subsignal("sda", Pins("R17"), IOStandard("LVCMOS33")),
     ),
 
@@ -430,7 +430,7 @@ class VideoSoC(BaseSoC):
         pix_freq = 148.50e6
 
         # hdmi in
-        hdmi_in0_pads = platform.request("hdmi_in", 0)
+        hdmi_in0_pads = platform.request("hdmi_in", 1)
         self.submodules.hdmi_in0_freq = FrequencyMeter(period=self.clk_freq)
         self.submodules.hdmi_in0 = HDMIIn(hdmi_in0_pads,
                                           self.sdram.crossbar.get_port(mode="write"),

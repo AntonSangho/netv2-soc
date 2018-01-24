@@ -269,7 +269,7 @@ static const struct video_timing video_modes[PROCESSOR_MODE_COUNT] = {
 	},
 	// 720x480 @ 60.00 Hz    Modeline "720x480" 26.72 720 736 808 896 480 481 484 497 -HSync +Vsync
 	{
-#if 0
+#if 1
 		.pixel_clock = 2672,
 
 		.h_active = 720,
