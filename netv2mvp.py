@@ -26,19 +26,12 @@ from litepcie.frontend.wishbone import LitePCIeWishboneBridge
 from litevideo.input import HDMIIn
 from litevideo.output import VideoOut
 
-from litevideo.input.analysis import SyncPolarity, ResolutionDetection
-from litevideo.input.analysis import FrameExtraction
-from litevideo.input.dma import DMA
-
-from litex.soc.cores import uart
-from litex.soc.cores.uart import UARTWishboneBridge
-from litescope import LiteScopeAnalyzer
 from litex.build.tools import write_to_file
 
-from litex.soc.interconnect.csr import AutoCSR
+from gateware.dma import DMAWriter, DMAReader
 
-from gateware.dma import DMAWriter, DMAReader, DMAControl
-
+from litevideo.output.common import *
+from litevideo.output.hdmi.s7 import S7HDMIOutEncoderSerializer, S7HDMIOutPHY
 
 import cpu_interface
 
@@ -320,8 +313,8 @@ class BaseSoC(SoCSDRAM):
         self.submodules.dna = dna.DNA()
         self.submodules.xadc = xadc.XADC()
 
-        self.submodules.bridge = UARTWishboneBridge(platform.request("debug_serial"), self.clk_freq, baudrate=115200)
-        self.add_wb_master(self.bridge.wishbone)
+        #self.submodules.bridge = UARTWishboneBridge(platform.request("debug_serial"), self.clk_freq, baudrate=3000000)
+        #self.add_wb_master(self.bridge.wishbone)
 
         self.crg.cd_sys.clk.attr.add("keep")
         self.platform.add_period_constraint(self.crg.cd_sys.clk, period_ns(100e6))
@@ -411,6 +404,8 @@ class VideoRawDMALoopbackSoC(BaseSoC):
     def __init__(self, platform, *args, **kwargs):
         BaseSoC.__init__(self, platform, *args, **kwargs)
 
+        pix_freq = 148.50e6
+
         # # #
         self.platform.add_source("verilog/hdmi_decoder.v")
         self.platform.add_source("verilog/decodeb.v")
@@ -430,15 +425,15 @@ class VideoRawDMALoopbackSoC(BaseSoC):
         slot1_base = slot_offset + 1*slot_length
 
         # dram dmas
-        dma_writer = DMAWriter(self.sdram.crossbar.get_port(mode="write", dw=32, cd="pix"))
-        dma_writer = ClockDomainsRenamer("pix")(dma_writer)
+        dma_writer = DMAWriter(self.sdram.crossbar.get_port(mode="write", dw=32, cd="hdmi_in0_pix"))
+        dma_writer = ClockDomainsRenamer("hdmi_in0_pix")(dma_writer)
         self.submodules += dma_writer
 
         # hdmi in
         hdmi_in0_pads = platform.request("hdmi_in", 1)
         self.submodules.hdmi_in0_freq = FrequencyMeter(period=self.clk_freq)
         self.submodules.hdmi_in0 = HDMIIn(hdmi_in0_pads,
-                                          self.sdram.crossbar.get_port(mode="write"),
+                                          None,
                                           fifo_depth=512,
                                           device="xc7",
                                           bypass=True
@@ -465,24 +460,26 @@ class VideoRawDMALoopbackSoC(BaseSoC):
             # stream
             dma_writer.start.eq(self.hdmi_in0.vsync_r),
             #dma_writer.idle                   # FIXME
-            dma_writer.sink.valid.eq(self.hdmi_in0.hi0_valid),
+            dma_writer.valid.eq(self.hdmi_in0.hi0_valid),
             #dma_writer.sink.ready             # FIXME
-            dma_writer.sink.data[0:10].eq(self.hdmi_in0.hi0_blue),
-            dma_writer.sink.data[10:20].eq(self.hdmi_in0.hi0_green),
-            dma_writer.sink.data[20:30].eq(self.hdmi_in0_hi0_red),
+            dma_writer.data0.eq(self.hdmi_in0.hi0_blue),
+            dma_writer.data1.eq(self.hdmi_in0.hi0_green),
+            dma_writer.data2.eq(self.hdmi_in0.hi0_red),
         ]
 
         # hdmi out
         self.sdata = Signal(30)
+
+        dma_reader = DMAReader(self.sdram.crossbar.get_port(mode="read", dw=32, cd="hdmi_out0_pix"))
+        dma_reader = ClockDomainsRenamer("hdmi_out0_pix")(dma_reader)
+        self.submodules.dma_reader = dma_reader
+
         self.submodules.hdmi_out0 = VideoOut(platform.device,
                                              platform.request("hdmi_out", 0),
-                                             hdmi_out0_dram_port,
+                                             None,
                                              mode="bypass",
                                              sdata=self.sdata)
 
-        dma_reader = DMAReader(self.sdram.crossbar.get_port(mode="read", dw=32, cd="pix_out"))
-        dma_reader = ClockDomainsRenamer("pix_out")(dma_reader)
-        self.submodules += dma_reader
 
         # hdmi out dma
         self.comb += [
@@ -496,10 +493,13 @@ class VideoRawDMALoopbackSoC(BaseSoC):
             dma_reader.start.eq(self.hdmi_in0.vsync_r), # FIXME
             #dma_reader.idle        # FIXME
             #dma_reader.source.valid       # FIXME
-            dma_reader.source.ready.eq(1), # FIXME
-            dma_reader.source.data[0:10].eq(sdata[:10]),
-            dma_reader.source.data[10:20].eq(sdata[10:20]),
-            dma_reader.source.data[20:30].eq(sdata[20:30]),
+            dma_reader.ready.eq(1), # FIXME
+            self.sdata[:10].eq(dma_reader.data0),
+            self.sdata[10:20].eq(dma_reader.data1),
+            self.sdata[20:30].eq(dma_reader.data2),
+#            dma_reader.data0.eq(self.sdata[:10]),
+#            dma_reader.data1.eq(self.sdata[10:20]),
+#            dma_reader.data2.eq(self.sdata[20:30]),
         ]
 
         # analyzer
@@ -507,13 +507,31 @@ class VideoRawDMALoopbackSoC(BaseSoC):
         from litescope import LiteScopeAnalyzer
 
         self.submodules.bridge = UARTWishboneBridge(
-            platform.request("serial_litescope"), self.clk_freq, baudrate=115200)
+            platform.request("debug_serial"), self.clk_freq, baudrate=3000000)
         self.add_wb_master(self.bridge.wishbone)
 
         analyzer_signals = [
-            Signal(2)
+            self.hdmi_in0.sdout,
+            self.hdmi_in0.data0_charsync.data,
+            self.hdmi_in0.data1_charsync.data,
+            self.hdmi_in0.data2_charsync.data,
+            self.hdmi_in0.data0_charsync.synced,
+            self.hdmi_in0.data1_charsync.synced,
+            self.hdmi_in0.data2_charsync.synced,
+            self.hdmi_in0.hi0_de,
+            self.hdmi_in0.hi0_hsync,
+            self.hdmi_in0.hi0_vsync,
+            self.hdmi_in0.hi0_valid,
+            self.hdmi_in0.hi0_ctl,
+            self.hdmi_in0.hi0_video_gb,
+            self.hdmi_in0.hi0_basic_de,
+            self.hdmi_in0.vsync_r,
+            self.dma_reader.data0,
+            self.dma_reader.data1,
+            self.dma_reader.data2,
+            self.dma_reader.start,
         ]
-        self.submodules.analyzer = LiteScopeAnalyzer(analyzer_signals, 128, cd="pix", cd_ratio=2)
+        self.submodules.analyzer = LiteScopeAnalyzer(analyzer_signals, 256, cd="hdmi_in0_pix", cd_ratio=2)
 
     def do_exit(self, vns):
         self.analyzer.export_csv(vns, "test/analyzer.csv")
@@ -536,12 +554,29 @@ class VideoRawDirectLoopbackSoC(BaseSoC):
 
         pix_freq = 148.50e6
 
+        # # #
+        self.platform.add_source("verilog/hdmi_decoder.v")
+        self.platform.add_source("verilog/decodeb.v")
+        self.platform.add_source("verilog/decodeg.v")
+        self.platform.add_source("verilog/decoder.v")
+        self.platform.add_source("verilog/DRAM16XN.v")
+        self.platform.add_source("verilog/chnlbond.v")
+        self.platform.add_source("verilog/decode_terc4.v")
+        self.platform.add_source("verilog/phsaligner.v")
+        self.platform.add_source("verilog/tmds_data_dec.v")
+        # # #
+
         # hdmi in
-        hdmi_in0_pads = platform.request("hdmi_in", 0)
+        self.sdata = Signal(30)
+
+        hdmi_in0_pads = platform.request("hdmi_in", 1)
         self.submodules.hdmi_in0_freq = FrequencyMeter(period=self.clk_freq)
         self.submodules.hdmi_in0 = HDMIIn(hdmi_in0_pads,
-                                         fifo_depth=512,
-                                         device="xc7")
+                                          None,
+                                          fifo_depth=512,
+                                          device="xc7",
+                                          bypass=True
+                                          )
         self.comb += self.hdmi_in0_freq.clk.eq(self.hdmi_in0.clocking.cd_pix.clk)
         self.platform.add_period_constraint(self.hdmi_in0.clocking.cd_pix.clk, period_ns(1*pix_freq))
         self.platform.add_period_constraint(self.hdmi_in0.clocking.cd_pix1p25x.clk, period_ns(1.25*pix_freq))
@@ -553,16 +588,32 @@ class VideoRawDirectLoopbackSoC(BaseSoC):
             self.hdmi_in0.clocking.cd_pix1p25x.clk,
             self.hdmi_in0.clocking.cd_pix5x.clk)
 
+        self.clock_domains.cd_hdmi_in0_pix = ClockDomain()
+        self.comb += self.cd_hdmi_in0_pix.clk.eq(self.hdmi_in0.clocking.cd_pix.clk)
+
+#        self.comb += [
+#            self.sdata[:10].eq(self.hdmi_in0.hi0_blue),
+#            self.sdata[10:20].eq(self.hdmi_in0.hi0_green),
+#            self.sdata[20:30].eq(self.hdmi_in0.hi0_red)
+#        ]
+
         # hdmi out
         hdmi_out0_pads = platform.request("hdmi_out", 0)
         self.submodules.hdmi_out0_clk_gen = S7HDMIOutEncoderSerializer(hdmi_out0_pads.clk_p, hdmi_out0_pads.clk_n, bypass_encoder=True)
-        self.comb += self.hdmi_out0_clk_gen.data.eq(Signal(10, reset=0b0000011111))
-        self.submodules.hdmi_out0_phy = S7HDMIOutPHY(hdmi_out0_pads, mode="raw")
+        self.comb += self.hdmi_out0_clk_gen.data_in.eq(Signal(10, reset=0b0000011111))
+        self.submodules.hdmi_out0_phy = S7HDMIOutPHY(hdmi_out0_pads, bypass="True") # defines the data channels
 
-        self.sync += [
-            self.hdmi_out0_phy.sink.c0.eq(self.hdmi_in0.syncpol.c0),
-            self.hdmi_out0_phy.sink.c1.eq(self.hdmi_in0.syncpol.c1),
-            self.hdmi_out0_phy.sink.c2.eq(self.hdmi_in0.syncpol.c2),
+        self.sync.pix += [
+#            self.hdmi_out0_phy.es0.data_in.eq(self.sdata[:10]),
+#            self.hdmi_out0_phy.es1.data_in.eq(self.sdata[10:20]),
+#            self.hdmi_out0_phy.es2.data_in.eq(self.sdata[20:30]),
+            self.hdmi_out0_phy.es0.data_in.eq(self.hdmi_in0.data0_charsync.data),
+            self.hdmi_out0_phy.es1.data_in.eq(self.hdmi_in0.data1_charsync.data),
+            self.hdmi_out0_phy.es2.data_in.eq(self.hdmi_in0.data2_charsync.data),
+
+            #            self.hdmi_out0_phy.sink.c0.eq(self.hdmi_in0.syncpol.c0),
+#            self.hdmi_out0_phy.sink.c1.eq(self.hdmi_in0.syncpol.c1),
+#            self.hdmi_out0_phy.sink.c2.eq(self.hdmi_in0.syncpol.c2),
         ]
 
         # hdmi over
@@ -576,13 +627,27 @@ class VideoRawDirectLoopbackSoC(BaseSoC):
         from litescope import LiteScopeAnalyzer
 
         self.submodules.bridge = UARTWishboneBridge(
-            platform.request("serial_litescope"), self.clk_freq, baudrate=115200)
+            platform.request("debug_serial"), self.clk_freq, baudrate=3000000)
         self.add_wb_master(self.bridge.wishbone)
 
         analyzer_signals = [
-            Signal(2)
+#            self.hdmi_in0.sdout,
+            self.hdmi_in0.data0_charsync.data,
+            self.hdmi_in0.data1_charsync.data,
+            self.hdmi_in0.data2_charsync.data,
+#            self.hdmi_in0.data0_charsync.synced,
+#            self.hdmi_in0.data1_charsync.synced,
+#            self.hdmi_in0.data2_charsync.synced,
+            self.hdmi_in0.hi0_de,
+            self.hdmi_in0.hi0_hsync,
+            self.hdmi_in0.hi0_vsync,
+            self.hdmi_in0.hi0_valid,
+            self.hdmi_in0.hi0_ctl,
+            self.hdmi_in0.hi0_video_gb,
+            self.hdmi_in0.hi0_basic_de,
+            self.hdmi_out0_phy.es0.data_in,
         ]
-        self.submodules.analyzer = LiteScopeAnalyzer(analyzer_signals, 2048, cd="pix", cd_ratio=2)
+        self.submodules.analyzer = LiteScopeAnalyzer(analyzer_signals, 512, cd="hdmi_in0_pix", cd_ratio=2)
 
     def do_exit(self, vns):
         self.analyzer.export_csv(vns, "test/analyzer.csv")
@@ -668,6 +733,14 @@ class VideoSoC(BaseSoC):
             platform.request("hdmi_sda_over_dn").eq(0),
         ]
 
+        # analyzer
+        from litex.soc.cores.uart import UARTWishboneBridge
+        from litescope import LiteScopeAnalyzer
+
+        self.submodules.bridge = UARTWishboneBridge(
+            platform.request("debug_serial"), self.clk_freq, baudrate=3000000)
+        self.add_wb_master(self.bridge.wishbone)
+
         analyzer_signals = [
             self.hdmi_in0.sdout,
             self.hdmi_in0.data0_charsync.data,
@@ -711,15 +784,14 @@ def main():
         soc = PCIeSoC(platform)
     elif sys.argv[1] == "video":
         soc = VideoSoC(platform)
-    elif sys.argv[1] == "video_raw_dma_loooback":
+    elif sys.argv[1] == "video_raw_dma_loopback":
         soc = VideoRawDMALoopbackSoC(platform)
     elif sys.argv[1] == "video_raw_direct_loopback":
         soc = VideoRawDirectLoopbackSoC(platform)
 
-#    import pdb; pdb.set_trace()
     builder = Builder(soc, output_dir="build")
     vns = builder.build()
-    
+
     csr_regions = soc.get_csr_regions()
     csr_constants = soc.get_constants()
     csr_csv = cpu_interface.get_csr_csv(csr_regions, csr_constants)
