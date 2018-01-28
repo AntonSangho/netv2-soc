@@ -75,12 +75,13 @@ class DMA(Module):
                 dma.sink.valid.eq(1),
             ),
             If(~self.enable,
-                dma.reset.eq(1),
+#                dma.reset.eq(1),
                 dram_port.flush.eq(1),
                 NextState("IDLE")
             ).Elif(dma.sink.valid & dma.sink.ready,
-                NextValue(count, count + 4),
-                If(count == (self.length - 4),
+#                dma.reset.eq(0),
+                NextValue(count, count + 4),  # I think this should be +1, not +4, because ashift: already does an x4
+                If(count >= (self.length - 4),
                     NextValue(count, 0),
                     NextValue(self.slot, ~self.slot)
                 )
