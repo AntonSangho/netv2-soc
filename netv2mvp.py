@@ -28,7 +28,7 @@ from litevideo.output import VideoOut
 
 from litex.build.tools import write_to_file
 
-from gateware.dma import DMAWriter, DMAReader
+from gateware.dma import DMAWriter, DMAReader, DMAControl
 
 from litevideo.output.common import *
 from litevideo.output.hdmi.s7 import S7HDMIOutEncoderSerializer, S7HDMIOutPHY
@@ -397,12 +397,19 @@ class PCIeSoC(BaseSoC):
 
 class VideoRawDMALoopbackSoC(BaseSoC):
     csr_peripherals = {
-        "analyzer"
+        "hdmi_out0",
+        "hdmi_in0",
+        "hdmi_in0_freq",
+        "hdmi_in0_edid_mem",
+        "dma_writer",
+        "dma_reader"
     }
     csr_map_update(BaseSoC.csr_map, csr_peripherals)
 
     def __init__(self, platform, *args, **kwargs):
         BaseSoC.__init__(self, platform, *args, **kwargs)
+
+        # # #
 
         pix_freq = 148.50e6
 
@@ -418,26 +425,13 @@ class VideoRawDMALoopbackSoC(BaseSoC):
         self.platform.add_source("verilog/tmds_data_dec.v")
         # # #
 
-        # parameters
-        slot_length = 1920*1080*32
-        slot_offset = 0x00000000
-        slot0_base = slot_offset + 0*slot_length
-        slot1_base = slot_offset + 1*slot_length
-
-        # dram dmas
-        dma_writer = DMAWriter(self.sdram.crossbar.get_port(mode="write", dw=32, cd="hdmi_in0_pix"))
-        dma_writer = ClockDomainsRenamer("hdmi_in0_pix")(dma_writer)
-        self.submodules += dma_writer
-
         # hdmi in
         hdmi_in0_pads = platform.request("hdmi_in", 1)
         self.submodules.hdmi_in0_freq = FrequencyMeter(period=self.clk_freq)
         self.submodules.hdmi_in0 = HDMIIn(hdmi_in0_pads,
-                                          None,
                                           fifo_depth=512,
                                           device="xc7",
-                                          bypass=True
-                                          )
+                                          bypass=True)
         self.comb += self.hdmi_in0_freq.clk.eq(self.hdmi_in0.clocking.cd_pix.clk)
         self.platform.add_period_constraint(self.hdmi_in0.clocking.cd_pix.clk, period_ns(1 * pix_freq))
         self.platform.add_period_constraint(self.hdmi_in0.clocking.cd_pix1p25x.clk, period_ns(1.25 * pix_freq))
@@ -449,57 +443,56 @@ class VideoRawDMALoopbackSoC(BaseSoC):
             self.hdmi_in0.clocking.cd_pix1p25x.clk,
             self.hdmi_in0.clocking.cd_pix5x.clk)
 
-        # hdmi in dma
-        self.comb += [
-            # control
-            dma_writer.enable.eq(1), # FIXME
-            dma_writer.slot0_base.eq(slot0_base),
-            dma_writer.slot1_base.eq(slot1_base),
-            dma_writer.length.eq(slot_length),
-
-            # stream
-            dma_writer.start.eq(self.hdmi_in0.vsync_r),
-            #dma_writer.idle                   # FIXME
-            dma_writer.valid.eq(self.hdmi_in0.hi0_valid),
-            #dma_writer.sink.ready             # FIXME
-            dma_writer.data0.eq(self.hdmi_in0.hi0_blue),
-            dma_writer.data1.eq(self.hdmi_in0.hi0_green),
-            dma_writer.data2.eq(self.hdmi_in0.hi0_red),
-        ]
+        self.clock_domains.cd_hdmi_in0_pix = ClockDomain()
+        self.comb += self.cd_hdmi_in0_pix.clk.eq(self.hdmi_in0.clocking.cd_pix.clk)
 
         # hdmi out
+        hdmi_out0_pads = platform.request("hdmi_out", 0)
+        self.submodules.hdmi_out0_clk_gen = S7HDMIOutEncoderSerializer(hdmi_out0_pads.clk_p, hdmi_out0_pads.clk_n,
+                                                                       bypass_encoder=True)
+        self.comb += self.hdmi_out0_clk_gen.data_in.eq(Signal(10, reset=0b0000011111))
+        self.submodules.hdmi_out0_phy = S7HDMIOutPHY(hdmi_out0_pads, bypass=True)
+
+        # hdmi over
+        self.comb += [
+            platform.request("hdmi_sda_over_up").eq(0),
+            platform.request("hdmi_sda_over_dn").eq(0),
+        ]
+
+        # dram dmas
+        dma_writer = DMAWriter(self.sdram.crossbar.get_port(mode="write", dw=32, cd="pix"))
+        dma_writer = ClockDomainsRenamer("pix")(dma_writer)
+        dma_reader = DMAReader(self.sdram.crossbar.get_port(mode="read", dw=32, cd="pix"))
+        dma_reader = ClockDomainsRenamer("pix")(dma_reader)
+        self.submodules += dma_writer, dma_reader
+        self.submodules.dma_writer = DMAControl(dma_writer)
+        self.submodules.dma_reader = DMAControl(dma_reader)
+
         self.sdata = Signal(30)
 
-        dma_reader = DMAReader(self.sdram.crossbar.get_port(mode="read", dw=32, cd="hdmi_out0_pix"))
-        dma_reader = ClockDomainsRenamer("hdmi_out0_pix")(dma_reader)
-        self.submodules.dma_reader = dma_reader
+        # hdmi in dma
+        self.comb += [
+            self.sdata.eq(self.hdmi_in0.sdout),
 
-        self.submodules.hdmi_out0 = VideoOut(platform.device,
-                                             platform.request("hdmi_out", 0),
-                                             None,
-                                             mode="bypass",
-                                             sdata=self.sdata)
-
+            dma_writer.sink.valid.eq(1),
+            # dma_writer.sink.ready # overflows monitored with litescope
+            dma_writer.sink.data[0:30].eq(self.sdata)
+#            dma_writer.sink.data[0:10].eq(self.hdmi_in0.syncpol.c0),
+#            dma_writer.sink.data[10:20].eq(self.hdmi_in0.syncpol.c1),
+#            dma_writer.sink.data[20:30].eq(self.hdmi_in0.syncpol.c2),
+        ]
 
         # hdmi out dma
         self.comb += [
-            # control
-            dma_reader.enable.eq(1),
-            dma_reader.slot0_base.eq(slot0_base),
-            dma_reader.slot1_base.eq(slot1_base),
-            dma_reader.length.eq(slot_length),
+            # dma_reader.source.valid # underflow monitored with litescope
+            dma_reader.source.ready.eq(1),
+            self.hdmi_out0_phy.es0.data_in.eq(dma_reader.source.data[0:10]),
+            self.hdmi_out0_phy.es1.data_in.eq(dma_reader.source.data[10:20]),
+            self.hdmi_out0_phy.es2.data_in.eq(dma_reader.source.data[20:30]),
 
-            # stream
-            dma_reader.start.eq(self.hdmi_in0.vsync_r), # FIXME
-            #dma_reader.idle        # FIXME
-            #dma_reader.source.valid       # FIXME
-            dma_reader.ready.eq(1), # FIXME
-            self.sdata[:10].eq(dma_reader.data0),
-            self.sdata[10:20].eq(dma_reader.data1),
-            self.sdata[20:30].eq(dma_reader.data2),
-#            dma_reader.data0.eq(self.sdata[:10]),
-#            dma_reader.data1.eq(self.sdata[10:20]),
-#            dma_reader.data2.eq(self.sdata[20:30]),
+#            self.hdmi_out0_phy.sink.c0.eq(dma_reader.source.data[0:10]),
+#            self.hdmi_out0_phy.sink.c1.eq(dma_reader.source.data[10:20]),
+#            self.hdmi_out0_phy.sink.c2.eq(dma_reader.source.data[20:30]),
         ]
 
         # analyzer
@@ -512,12 +505,12 @@ class VideoRawDMALoopbackSoC(BaseSoC):
 
         analyzer_signals = [
             self.hdmi_in0.sdout,
-            self.hdmi_in0.data0_charsync.data,
-            self.hdmi_in0.data1_charsync.data,
-            self.hdmi_in0.data2_charsync.data,
-            self.hdmi_in0.data0_charsync.synced,
-            self.hdmi_in0.data1_charsync.synced,
-            self.hdmi_in0.data2_charsync.synced,
+#            self.hdmi_in0.data0_charsync.data,
+#            self.hdmi_in0.data1_charsync.data,
+#            self.hdmi_in0.data2_charsync.data,
+#            self.hdmi_in0.data0_charsync.synced,
+#            self.hdmi_in0.data1_charsync.synced,
+#            self.hdmi_in0.data2_charsync.synced,
             self.hdmi_in0.hi0_de,
             self.hdmi_in0.hi0_hsync,
             self.hdmi_in0.hi0_vsync,
@@ -526,10 +519,7 @@ class VideoRawDMALoopbackSoC(BaseSoC):
             self.hdmi_in0.hi0_video_gb,
             self.hdmi_in0.hi0_basic_de,
             self.hdmi_in0.vsync_r,
-            self.dma_reader.data0,
-            self.dma_reader.data1,
-            self.dma_reader.data2,
-            self.dma_reader.start,
+            dma_reader.source.data,
         ]
         self.submodules.analyzer = LiteScopeAnalyzer(analyzer_signals, 256, cd="hdmi_in0_pix", cd_ratio=2)
 
