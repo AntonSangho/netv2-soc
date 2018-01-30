@@ -59,6 +59,7 @@ class DMA(Module):
 
         # control
         count = Signal(awidth)
+        self.count = count
         self.submodules.fsm = fsm = FSM(reset_state="IDLE")
         fsm.act("IDLE",
             self.idle.eq(1),
@@ -75,19 +76,30 @@ class DMA(Module):
                 dma.sink.valid.eq(1),
             ),
             If(~self.enable,
-#                dma.reset.eq(1),
+                dma.reset.eq(1),
                 dram_port.flush.eq(1),
                 NextState("IDLE")
             ).Elif(dma.sink.valid & dma.sink.ready,
 #                dma.reset.eq(0),
-                NextValue(count, count + 4),  # I think this should be +1, not +4, because ashift: already does an x4
-                If(count >= (self.length - 4),
+                NextValue(count, count + 4),
+                If(count == (self.length - 4),
                     NextValue(count, 0),
                     NextValue(self.slot, ~self.slot)
                 )
             )
         )
-        self.comb += dma.sink.address.eq(base[ashift:] + count[ashift:])
+        self.target = Signal(awidth)
+        self.comb += self.target.eq(base[ashift:] + count[ashift:])
+
+        self.comb += [ # make sure writes are within DRAM but not over firmware
+            If((self.target < 0x50000000) & (self.target > 0x40FFFFFF),
+               dma.sink.address.eq(self.target)
+               ).Else(
+                dma.sink.address.eq(base)
+            )
+            ]
+        # dma.sink.address seems to be in "words" aligned to the dw = 32 bits width
+        # so the above line means base[] is in "bytes", and "count" is also in bytes
 
 
 class DMAWriter(DMA):
