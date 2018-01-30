@@ -38,7 +38,7 @@ class DMA(Module):
         base = Signal(awidth)
         self.comb += \
             If(self.slot,
-                base.eq(self.slot1_base)
+                base.eq(self.slot1_base)    # align base with word width
             ).Else(
                 base.eq(self.slot0_base))
 
@@ -58,7 +58,7 @@ class DMA(Module):
             ]
 
         # control
-        count = Signal(awidth)
+        count = Signal(awidth) # count units is in "words"; 27 bits wide for 512MB memory
         self.count = count
         self.submodules.fsm = fsm = FSM(reset_state="IDLE")
         fsm.act("IDLE",
@@ -81,26 +81,23 @@ class DMA(Module):
                 NextState("IDLE")
             ).Elif(dma.sink.valid & dma.sink.ready,
 #                dma.reset.eq(0),
-                NextValue(count, count + 4),
-                If(count == (self.length - 4),
+                NextValue(count, count + 1),
+                If(count == (self.length - 1),
                     NextValue(count, 0),
                     NextValue(self.slot, ~self.slot)
                 )
             )
         )
         self.target = Signal(awidth)
-        self.comb += self.target.eq(base[ashift:] + count[ashift:])
+        self.comb += self.target.eq(base + count)
 
         self.comb += [ # make sure writes are within DRAM but not over firmware
-            If((self.target < 0x50000000) & (self.target > 0x40FFFFFF),
+            If((self.target > 0x10000),  # protect bottom 64k words for firmware
                dma.sink.address.eq(self.target)
                ).Else(
                 dma.sink.address.eq(base)
             )
             ]
-        # dma.sink.address seems to be in "words" aligned to the dw = 32 bits width
-        # so the above line means base[] is in "bytes", and "count" is also in bytes
-
 
 class DMAWriter(DMA):
     def __init__(self, dram_port, fifo_depth=512):
@@ -127,9 +124,9 @@ class DMAControl(DMA, AutoCSR):
 
         self.specials += [
             MultiReg(self.enable.storage, dma.enable, dma.cd),
-            MultiReg(self.slot0_base.storage, dma.slot0_base, dma.cd),
-            MultiReg(self.slot1_base.storage, dma.slot1_base, dma.cd),
-            MultiReg(self.length.storage, dma.length, dma.cd),
+            MultiReg(self.slot0_base.storage[2:], dma.slot0_base, dma.cd),  # word-align parameters
+            MultiReg(self.slot1_base.storage[2:], dma.slot1_base, dma.cd),
+            MultiReg(self.length.storage[2:], dma.length, dma.cd),
 
             MultiReg(dma.idle, self.idle.status),
             MultiReg(dma.slot, self.slot.status),

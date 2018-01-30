@@ -460,9 +460,9 @@ class VideoRawDMALoopbackSoC(BaseSoC):
         ]
 
         # dram dmas
-        dma_writer = DMAWriter(self.sdram.crossbar.get_port(mode="write", dw=32, cd="pix"), fifo_depth=512)
+        dma_writer = DMAWriter(self.sdram.crossbar.get_port(mode="write", dw=32, cd="pix"), fifo_depth=256)
         dma_writer = ClockDomainsRenamer("pix")(dma_writer)
-        dma_reader = DMAReader(self.sdram.crossbar.get_port(mode="read", dw=32, cd="pix"), fifo_depth=512)
+        dma_reader = DMAReader(self.sdram.crossbar.get_port(mode="read", dw=32, cd="pix"), fifo_depth=256)
         dma_reader = ClockDomainsRenamer("pix")(dma_reader)
         self.submodules += dma_writer, dma_reader
         self.submodules.dma_writer = DMAControl(dma_writer)
@@ -504,7 +504,7 @@ class VideoRawDMALoopbackSoC(BaseSoC):
         self.add_wb_master(self.bridge.wishbone)
 
         analyzer_signals = [
-            self.hdmi_in0.sdout,
+#            self.hdmi_in0.sdout,
 #            self.hdmi_in0.data0_charsync.data,
 #            self.hdmi_in0.data1_charsync.data,
 #            self.hdmi_in0.data2_charsync.data,
@@ -524,6 +524,7 @@ class VideoRawDMALoopbackSoC(BaseSoC):
             dma_writer.dma.sink.ready,
             dma_writer.count,
             dma_writer.slot,
+            dma_writer.dma.sink.address,
             dma_reader.source.data,
         ]
         self.submodules.analyzer = LiteScopeAnalyzer(analyzer_signals, 256, cd="hdmi_in0_pix", cd_ratio=2)

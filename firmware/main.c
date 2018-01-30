@@ -39,14 +39,16 @@ int main(void)
 	// do it here to be sure values are stabilized when we'll use them
 	dma_writer_slot0_base_write(0x41000000);
 	dma_writer_slot1_base_write(0x48000000);
-	dma_writer_length_write(2200*1125*4);
+	//	dma_writer_length_write(2200*1125*4);
+	dma_writer_length_write(208);
 #endif
 
 #ifdef CSR_DMA_READER_BASE
 	// do it here to be sure values are stabilized when we'll use them
 	dma_reader_slot0_base_write(0x41000000);
 	dma_reader_slot1_base_write(0x48000000);
-	dma_reader_length_write(2200*1125*4);
+	//	dma_reader_length_write(2200*1125*4);
+	dma_reader_length_write(1650*750*4);
 #endif
 
 	ci_prompt();
