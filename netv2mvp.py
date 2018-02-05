@@ -490,6 +490,9 @@ class VideoRawLoopbackSoC(BaseSoC):
         "hdmi_in0",
         "hdmi_in0_freq",
         "hdmi_in0_edid_mem",
+        "hdmi_in1",
+        "hdmi_in1_freq",
+        "hdmi_in1_edid_mem",
         "generator",
         "checker",
     }
@@ -525,6 +528,24 @@ class VideoRawLoopbackSoC(BaseSoC):
             self.hdmi_in0.clocking.cd_pix1p25x.clk,
             self.hdmi_in0.clocking.cd_pix5x.clk)
 
+        # overlay in
+        hdmi_in1_pads = platform.request("hdmi_in", 1)
+        self.submodules.hdmi_in1_freq = FrequencyMeter(period=self.clk_freq)
+        self.submodules.hdmi_in1 = HDMIIn(hdmi_in1_pads,
+                                          self.sdram.crossbar.get_port(mode="write"),
+                                          fifo_depth=512,
+                                          device="xc7")
+        self.comb += self.hdmi_in1_freq.clk.eq(self.hdmi_in1.clocking.cd_pix.clk)
+        self.platform.add_period_constraint(self.hdmi_in1.clocking.cd_pix.clk, period_ns(1*pix_freq))
+        self.platform.add_period_constraint(self.hdmi_in1.clocking.cd_pix1p25x.clk, period_ns(1.25*pix_freq))
+        self.platform.add_period_constraint(self.hdmi_in1.clocking.cd_pix5x.clk, period_ns(5*pix_freq))
+
+        self.platform.add_false_path_constraints(
+            self.crg.cd_sys.clk,
+            self.hdmi_in1.clocking.cd_pix.clk,
+            self.hdmi_in1.clocking.cd_pix1p25x.clk,
+            self.hdmi_in1.clocking.cd_pix5x.clk)
+
         # hdmi out
         hdmi_out0_pads = platform.request("hdmi_out", 0)
         self.submodules.hdmi_out0_clk_gen = S7HDMIOutEncoderSerializer(hdmi_out0_pads.clk_p, hdmi_out0_pads.clk_n, bypass_encoder=True)
@@ -541,7 +562,7 @@ class VideoRawLoopbackSoC(BaseSoC):
         c0_pix_o = Signal(10)
         c1_pix_o = Signal(10)
         c2_pix_o = Signal(10)
-        self.sync.pix_o += [  # extra delay to absorb cross-domain jitter & routing
+        self.sync.hdmi_in0_pix_o += [  # extra delay to absorb cross-domain jitter & routing
             c0_pix_o.eq(self.hdmi_in0.syncpol.c0),
             c1_pix_o.eq(self.hdmi_in0.syncpol.c1),
             c2_pix_o.eq(self.hdmi_in0.syncpol.c2)
