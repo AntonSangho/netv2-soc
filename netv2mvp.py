@@ -493,8 +493,6 @@ class VideoRawLoopbackSoC(BaseSoC):
         "hdmi_in1",
         "hdmi_in1_freq",
         "hdmi_in1_edid_mem",
-        "generator",
-        "checker",
     }
     csr_map_update(BaseSoC.csr_map, csr_peripherals)
 
@@ -505,16 +503,10 @@ class VideoRawLoopbackSoC(BaseSoC):
 
         pix_freq = 148.50e6
 
-        generator_port = self.sdram.crossbar.get_port(cd="sys")  # mode="write"
-        self.submodules.generator = LiteDRAMBISTGenerator(generator_port, random=True)
-
-        checker_port = self.sdram.crossbar.get_port(cd="sys")  # mode="read"
-        self.submodules.checker = LiteDRAMBISTChecker(checker_port, random=True)
-
         # hdmi in
         hdmi_in0_pads = platform.request("hdmi_in", 0)
         self.submodules.hdmi_in0_freq = FrequencyMeter(period=self.clk_freq)
-        self.submodules.hdmi_in0 = HDMIIn(hdmi_in0_pads, device="xc7")
+        self.submodules.hdmi_in0 = HDMIIn(hdmi_in0_pads, device="xc7", split_mmcm=True)
         self.comb += self.hdmi_in0_freq.clk.eq(self.hdmi_in0.clocking.cd_pix_o.clk)
         self.platform.add_period_constraint(self.hdmi_in0.clocking.cd_pix.clk, period_ns(1*pix_freq))
         self.platform.add_period_constraint(self.hdmi_in0.clocking.cd_pix_o.clk, period_ns(1*pix_freq))
@@ -562,7 +554,7 @@ class VideoRawLoopbackSoC(BaseSoC):
         c0_pix_o = Signal(10)
         c1_pix_o = Signal(10)
         c2_pix_o = Signal(10)
-        self.sync.hdmi_in0_pix_o += [  # extra delay to absorb cross-domain jitter & routing
+        self.sync.pix_o += [  # extra delay to absorb cross-domain jitter & routing
             c0_pix_o.eq(self.hdmi_in0.syncpol.c0),
             c1_pix_o.eq(self.hdmi_in0.syncpol.c1),
             c2_pix_o.eq(self.hdmi_in0.syncpol.c2)
