@@ -29,14 +29,20 @@ int main(void)
 	puts("\nNeTV2 CPU testing software built "__DATE__" "__TIME__);
 
 	config_init();
+	puts( "here\n" );
 	time_init();
 
 	processor_init();
+	puts( "here\n" );
 	processor_update();
+	puts( "here\n" );
 	processor_start(config_get(CONFIG_KEY_RESOLUTION));
 
+	puts( "here\n" );
+	
 #ifdef CSR_DMA_WRITER_BASE
 	// do it here to be sure values are stabilized when we'll use them
+	puts( "oof\n" );
 	dma_writer_slot0_base_write(MAIN_RAM_BASE + 0x1000000);
 	dma_writer_slot1_base_write(MAIN_RAM_BASE + 0x2000000);
 	dma_writer_length_write(2200*1125*4);
@@ -44,12 +50,14 @@ int main(void)
 
 #ifdef CSR_DMA_READER_BASE
 	// do it here to be sure values are stabilized when we'll use them
+	puts( "oof2\n" );
 	dma_reader_slot0_base_write(MAIN_RAM_BASE + 0x1000000);
 	dma_reader_slot1_base_write(MAIN_RAM_BASE + 0x2000000);
 	dma_reader_length_write(2200*1125*4);
 #endif
 
 	ci_prompt();
+	puts( "here\n" );
 	while(1) {
 		processor_service();
 		ci_service();

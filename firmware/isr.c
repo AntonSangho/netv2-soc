@@ -3,7 +3,10 @@
 #include <uart.h>
 
 #include "hdmi_in0.h"
+#include "hdmi_in1.h"
+
 void isr(void);
+
 void isr(void)
 {
 	unsigned int irqs;
@@ -15,5 +18,10 @@ void isr(void)
 #ifdef CSR_HDMI_IN0_INTERRUPT
 	if(irqs & (1 << HDMI_IN0_INTERRUPT))
 		hdmi_in0_isr();
+#endif
+
+#ifdef CSR_HDMI_IN1_INTERRUPT
+	if(irqs & (1 << HDMI_IN1_INTERRUPT))
+		hdmi_in1_isr();
 #endif
 }

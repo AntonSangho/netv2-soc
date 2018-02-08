@@ -496,6 +496,11 @@ class VideoRawLoopbackSoC(BaseSoC):
     }
     csr_map_update(BaseSoC.csr_map, csr_peripherals)
 
+    interrupt_map = {
+        "hdmi_in1": 4,
+    }
+    interrupt_map.update(BaseSoC.interrupt_map)
+
     def __init__(self, platform, *args, **kwargs):
         BaseSoC.__init__(self, platform, *args, **kwargs)
 
@@ -565,8 +570,6 @@ class VideoRawLoopbackSoC(BaseSoC):
             self.hdmi_out0_phy.sink.c1.eq(c1_pix_o),
             self.hdmi_out0_phy.sink.c2.eq(c2_pix_o),
         ]
-        platform.add_platform_command(
-            "set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets hdmi_in_ibufds/ob]")
 
 
 class VideoRawDMALoopbackSoC(BaseSoC):

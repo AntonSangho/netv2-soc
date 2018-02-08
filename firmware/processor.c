@@ -452,6 +452,7 @@ void processor_start(int mode)
 	processor_v_active = m->v_active;
 	processor_refresh = calculate_refresh_rate(m);
 
+	puts( "+" );
 #ifdef CSR_HDMI_OUT0_BASE
 	hdmi_out0_core_initiator_enable_write(0);
 	hdmi_out0_driver_clocking_mmcm_reset_write(1);
@@ -466,18 +467,23 @@ void processor_start(int mode)
 	hdmi_in1_edid_hpd_en_write(0);
 #endif
 
+	puts( "+" );
 #ifdef CSR_HDMI_IN0_BASE
 	hdmi_in0_disable();
 	hdmi_in0_clear_framebuffers();
 #endif
 #ifdef CSR_HDMI_IN1_BASE
+	puts( "+" );
 	hdmi_in1_disable();
+	puts( "+" );
 	hdmi_in1_clear_framebuffers();
+	puts( "+" );
 #endif
 #ifndef SIMULATION
 	pattern_fill_framebuffer(m->h_active, m->v_active);
 #endif
 
+	puts( "+" );
 #ifdef CSR_HDMI_IN0_BASE
 	mmcm_config_for_clock(m->pixel_clock);
 #endif
@@ -487,9 +493,12 @@ void processor_start(int mode)
 	hdmi_in0_init_video(m->h_active, m->v_active);
 #endif
 #ifdef CSR_HDMI_IN1_BASE
+	puts( "+" );
 	hdmi_in1_init_video(m->h_active, m->v_active);
+	puts( "+" );
 #endif
 
+	puts( "+" );
 #ifdef CSR_HDMI_OUT0_BASE
 	hdmi_out0_driver_clocking_mmcm_reset_write(0);
 	hdmi_out0_core_initiator_enable_write(1);
