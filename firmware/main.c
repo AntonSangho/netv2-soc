@@ -29,16 +29,12 @@ int main(void)
 	puts("\nNeTV2 CPU testing software built "__DATE__" "__TIME__);
 
 	config_init();
-	puts( "here\n" );
 	time_init();
 
 	processor_init();
-	puts( "here\n" );
 	processor_update();
-	puts( "here\n" );
 	processor_start(config_get(CONFIG_KEY_RESOLUTION));
 
-	puts( "here\n" );
 	
 #ifdef CSR_DMA_WRITER_BASE
 	// do it here to be sure values are stabilized when we'll use them
@@ -57,7 +53,6 @@ int main(void)
 #endif
 
 	ci_prompt();
-	puts( "here\n" );
 	while(1) {
 		processor_service();
 		ci_service();
