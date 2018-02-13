@@ -520,23 +520,23 @@ class VideoRawLoopbackSoC(BaseSoC):
             self.hdmi_in0.clocking.cd_pix1p25x.clk,
             self.hdmi_in0.clocking.cd_pix5x.clk)
 
-        # overlay in
-        hdmi_in1_pads = platform.request("hdmi_in", 1)
-        self.submodules.hdmi_in1_freq = FrequencyMeter(period=self.clk_freq)
-        self.submodules.hdmi_in1 = HDMIIn(hdmi_in1_pads,
-                                          self.sdram.crossbar.get_port(mode="write"),
-                                          fifo_depth=512,
-                                          device="xc7")
-        self.comb += self.hdmi_in1_freq.clk.eq(self.hdmi_in1.clocking.cd_pix.clk)
-        self.platform.add_period_constraint(self.hdmi_in1.clocking.cd_pix.clk, period_ns(1*pix_freq))
-        self.platform.add_period_constraint(self.hdmi_in1.clocking.cd_pix1p25x.clk, period_ns(1.25*pix_freq))
-        self.platform.add_period_constraint(self.hdmi_in1.clocking.cd_pix5x.clk, period_ns(5*pix_freq))
-
-        self.platform.add_false_path_constraints(
-            self.crg.cd_sys.clk,
-            self.hdmi_in1.clocking.cd_pix.clk,
-            self.hdmi_in1.clocking.cd_pix1p25x.clk,
-            self.hdmi_in1.clocking.cd_pix5x.clk)
+        # # overlay in
+        # hdmi_in1_pads = platform.request("hdmi_in", 1)
+        # self.submodules.hdmi_in1_freq = FrequencyMeter(period=self.clk_freq)
+        # self.submodules.hdmi_in1 = HDMIIn(hdmi_in1_pads,
+        #                                   self.sdram.crossbar.get_port(mode="write"),
+        #                                   fifo_depth=512,
+        #                                   device="xc7")
+        # self.comb += self.hdmi_in1_freq.clk.eq(self.hdmi_in1.clocking.cd_pix.clk)
+        # self.platform.add_period_constraint(self.hdmi_in1.clocking.cd_pix.clk, period_ns(1*pix_freq))
+        # self.platform.add_period_constraint(self.hdmi_in1.clocking.cd_pix1p25x.clk, period_ns(1.25*pix_freq))
+        # self.platform.add_period_constraint(self.hdmi_in1.clocking.cd_pix5x.clk, period_ns(5*pix_freq))
+        #
+        # self.platform.add_false_path_constraints(
+        #     self.crg.cd_sys.clk,
+        #     self.hdmi_in1.clocking.cd_pix.clk,
+        #     self.hdmi_in1.clocking.cd_pix1p25x.clk,
+        #     self.hdmi_in1.clocking.cd_pix5x.clk)
 
         # hdmi out
         hdmi_out0_pads = platform.request("hdmi_out", 0)
